@@ -36,6 +36,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '排演表生成与导出' }
   },
   {
+    path: '/live',
+    name: 'live-recovery',
+    component: () => import('@/pages/LiveRecovery.vue'),
+    meta: { title: '现场恢复' }
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/sessions'
   }
