@@ -305,6 +305,10 @@ function goSheets(): void {
   void router.push('/sheets')
 }
 
+function goRecoveries(): void {
+  void router.push('/recoveries')
+}
+
 function durationOf(cue: Cue): string {
   return formatSeconds(cueTotalSeconds(cue))
 }
@@ -333,6 +337,7 @@ function channelFilterDuplicate(fixtureId: string): boolean {
       <div class="page__actions">
         <NButton @click="goFixtures">灯位通道</NButton>
         <NButton @click="goSheets">排演表</NButton>
+        <NButton @click="goRecoveries">现场恢复</NButton>
         <NButton @click="showShift = true">批量偏移过渡</NButton>
         <NButton @click="sortByCueNo">按 Cue 号重排</NButton>
         <NButton type="primary" :disabled="!session" @click="openCreate">插入 Cue</NButton>

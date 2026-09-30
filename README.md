@@ -1,6 +1,6 @@
 # 剧场灯光 Cue 表编排器（gbcuesheet）
 
-面向剧场灯光师与舞台监督的纯前端单页应用：把一台演出的**场次**、**灯位通道**与 **Cue 提示点**串成可执行的灯光编排，记录亮度、色温与过渡时间，并在排演后导出排演表。数据全部保存在浏览器本地，不依赖任何后端服务、数据库或外部接口。
+面向剧场灯光师与舞台监督的纯前端单页应用：把一台演出的**场次**、**灯位通道**与 **Cue 提示点**串成可执行的灯光编排，记录亮度、色温与过渡时间，并在排演后导出排演表。演出中途**拉停**时可登记现场恢复（当前 Cue、已走过列表、末帧各通道电平），重开从现场继续、补走或跳回。数据全部保存在浏览器本地，不依赖任何后端服务、数据库或外部接口。
 
 ## 一、Docker 一键启动（推荐）
 
@@ -29,7 +29,7 @@ docker compose up -d --build    # 改动代码后重新构建
 | 语言 | TypeScript（`strict`，无 `any`） | `npm run build` 内含 `vue-tsc --noEmit` 类型检查 |
 | UI 组件库 | Naive UI（暗色剧场主题） | 按需引入组件，无全局注册 |
 | 构建工具 | Vite 6 | 路由级代码分割 + 依赖单独 vendor 分块 |
-| 状态管理 | Pinia | 5 个 store，页面只读 store |
+| 状态管理 | Pinia | 6 个 store，页面只读 store |
 | 路由 | Vue Router 4（history 模式） | nginx `try_files` 做 SPA 回退 |
 | 本地存储 | IndexedDB（Dexie 4 封装） | 含数据结构版本号与升级迁移逻辑 |
 | 部署 | 多阶段 Dockerfile（node:20-alpine + nginx:alpine） | 构建期类型检查零错误 |
@@ -43,8 +43,9 @@ docker compose up -d --build    # 改动代码后重新构建
 | `/sessions/:id/cues` | Cue 编排时间轴 | 插入 / 复制 / 删除 Cue、拖拽调整先后、沿袭上一条参数、批量偏移过渡时间 | Cue、CueLevel |
 | `/cues/:id/levels` | 通道电平编辑 | 逐通道设定亮度与色温、色温漂移检查、一键对齐基准色温 | CueLevel、Fixture |
 | `/sheets` | 排演表生成与导出 | 勾选 Cue 组表、本地留存历史、预览 / 复制 / 下载纯文本 | RehearsalSheet、Cue |
+| `/recoveries`、`/recoveries/:id` | 现场恢复 / 恢复台 | 登记拉停（当前 Cue / 已走过 / 末帧电平 / 复演时刻）、补走或跳回、预计时刻按复演时刻重算、计划 vs 现场逐条确认后合并 | LiveRecovery、Cue、CueLevel |
 
-核心动作闭环：**建场次 → 配灯位通道 → 插入 Cue → 设定过渡与通道电平 → 导出排演表**。
+核心动作闭环：**建场次 → 配灯位通道 → 插入 Cue → 设定过渡与通道电平 → 导出排演表**；演出拉停后走**登记拉停 → 比对计划与现场 → 从现场恢复（补走 / 跳回）→ 完结归档**。
 
 ## 四、本地开发
 
@@ -75,11 +76,12 @@ sologsb-1103/
     └── src/
         ├── main.ts                 # 启动时先把本地数据载入 Pinia，再挂载视图
         ├── App.vue                 # 暗色主题外壳 + 侧边导航 + Message/Dialog Provider
-        ├── types/                  # 5 个数据模型，一模型一文件
-        │   ├── session.ts  fixture.ts  cue.ts  level.ts  sheet.ts
+        ├── types/                  # 6 个数据模型，一模型一文件
+        │   ├── session.ts  fixture.ts  cue.ts  level.ts
+        │   ├── sheet.ts    live.ts（现场恢复）
         ├── stores/                 # Pinia：跨页状态唯一来源
-        │   ├── sessionStore.ts  cueStore.ts  fixtureStore.ts
-        │   ├── levelStore.ts    sheetStore.ts
+        │   ├── sessionStore.ts  cueStore.ts     fixtureStore.ts
+        │   ├── levelStore.ts    sheetStore.ts   recoveryStore.ts
         ├── components/common/      # 共享组件
         │   ├── FadeBar.vue      # 渐变条：渐亮/保持/渐暗按比例绘制
         │   ├── ChannelChip.vue  # 通道标签：通道号 + 灯位色块 + 亮度百分比
@@ -91,23 +93,25 @@ sologsb-1103/
         ├── pages/
         │   ├── SessionList.vue  FixtureBoard.vue  CueTimeline.vue
         │   ├── LevelEditor.vue  SheetList.vue
+        │   └── RecoveryList.vue RecoveryDetail.vue  # 现场恢复登记与恢复台
         ├── router/index.ts
         └── utils/
-            ├── fade.ts     # 过渡时间格式化、色温一致性判定、排演表纯文本拼装
-            ├── db.ts       # IndexedDB（Dexie）封装：版本号与升级迁移
-            ├── export.ts   # 文本下载、文件名生成、剪贴板复制
-            ├── cueOrder.ts # Cue 编号解析、比较、排序与位次计算
-            ├── patch.ts    # 通道冲突 / 灯位负载纯函数
-            └── id.ts       # 本地主键生成
+            ├── fade.ts       # 过渡时间格式化、色温一致性判定、排演表纯文本拼装
+            ├── recovery.ts   # 现场快照、计划 vs 现场冲突检测、时间轴合并、预计时刻重算
+            ├── db.ts         # IndexedDB（Dexie）封装：版本号与升级迁移
+            ├── export.ts     # 文本下载、文件名生成、剪贴板复制
+            ├── cueOrder.ts   # Cue 编号解析、比较、排序与位次计算
+            ├── patch.ts      # 通道冲突 / 灯位负载纯函数
+            └── id.ts         # 本地主键生成
 ```
 
 ## 六、数据存储说明
 
 - 所有数据存放在**浏览器本地 IndexedDB**，数据库名 `gbcuesheet`，由 `src/utils/db.ts` 用 Dexie 统一封装；页面不直接读写数据库，只调用 store 的 action。
-- 共 6 张表：`sessions`、`fixtures`、`cues`、`levels`、`sheets`、`appMeta`（元数据）。
-- **数据结构版本号**：`DB_VERSION = 2`。`version(1)` 定义初始结构；`version(2)` 新增 `updatedAt` / `sheetNo` 索引、`appMeta` 表，并在 `upgrade()` 中迁移既有数据（补齐 `updatedAt`、`orderIndex`、`holdSec`，规范化遗留排演表编号与条目快照）。
-- 删除场次会级联清理其灯位通道、Cue、通道电平与排演表；删除通道会清理对应的电平记录。
-- **容器无状态**：不使用数据库服务、不挂载命名卷；换浏览器或清理站点数据即等于清空。排演表以生成时刻的快照留档，之后修改 Cue 不影响历史记录。
+- 共 7 张表：`sessions`、`fixtures`、`cues`、`levels`、`sheets`、`recoveries`（现场恢复）、`appMeta`（元数据）。
+- **数据结构版本号**：`DB_VERSION = 3`。`version(1)` 定义初始结构；`version(2)` 新增 `updatedAt` / `sheetNo` 索引、`appMeta` 表，并在 `upgrade()` 中迁移既有数据（补齐 `updatedAt`、`orderIndex`、`holdSec`，规范化遗留排演表编号与条目快照）；`version(3)` 仅新增 `recoveries` 表及其索引，无需迁移既有数据，**旧版本数据自动兼容**（旧数据本就没有现场记录，恢复功能按「无拉停记录」空态处理）。
+- 删除场次会级联清理其灯位通道、Cue、通道电平、排演表与现场恢复单；删除通道会清理对应的电平记录。
+- **容器无状态**：不使用数据库服务、不挂载命名卷；换浏览器或清理站点数据即等于清空。排演表以生成时刻的快照留档，之后修改 Cue 不影响历史记录；现场恢复单同样以拉停时刻的快照（当前 Cue、已走过列表、末帧电平）定格，主表之后对同一 Cue / 通道的改动会在恢复台以「计划 vs 现场」两版列出，逐条确认后才合并，未处理冲突随恢复单保留到下次。
 
 ## 七、容器化实现要点
 

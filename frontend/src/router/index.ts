@@ -36,6 +36,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '排演表生成与导出' }
   },
   {
+    path: '/recoveries',
+    name: 'recovery-list',
+    component: () => import('@/pages/RecoveryList.vue'),
+    meta: { title: '现场恢复' }
+  },
+  {
+    path: '/recoveries/:id',
+    name: 'recovery-detail',
+    component: () => import('@/pages/RecoveryDetail.vue'),
+    meta: { title: '现场恢复台' }
+  },
+  {
     path: '/:pathMatch(.*)*',
     redirect: '/sessions'
   }
